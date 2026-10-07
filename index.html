@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Caro Online 15x15</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome CDN -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Firebase SDKs for Online Socket-like Room Sync -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+    <style>
+        .board-grid {
+            display: grid;
+            grid-template-columns: repeat(15, minmax(0, 1fr));
+            gap: 1px;
+            background-color: #cbd5e1;
+            border: 2px solid #475569;
+        }
+        .cell {
+            aspect-ratio: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 14px;
+            cursor: pointer;
+            user-select: none;
+            transition: background-color 0.15s;
+        }
+        /* Theme Styles */
+        body.theme-classic { background: #f8fafc; color: #1e293b; }
+        .theme-classic .cell { background: #ffffff; color: #334155; }
+        .theme-classic .cell:hover { background: #f1f5f9; }
+
+        body.theme-neon { background: #0f172a; color: #f8fafc; }
+        .theme-neon .board-grid { background: #38bdf8; border-color: #0284c7; }
+        .theme-neon .cell { background: #1e293b; color: #38bdf8; }
+        .theme-neon .cell:hover { background: #334155; }
+
+        body.theme-dark { background: #18181b; color: #f4f4f5; }
+        .theme-dark .board-grid { background: #3f3f46; border-color: #52525b; }
+        .theme-dark .cell { background: #27272a; color: #d4d4d8; }
+        .theme-dark .cell:hover { background: #3f3f46; }
+
+        body.theme-pastel { background: #fdf2f8; color: #db2777; }
+        .theme-pastel .board-grid { background: #fbcfe8; border-color: #f472b6; }
+        .theme-pastel .cell { background: #ffffff; color: #ec4899; }
+        .theme-pastel .cell:hover { background: #fce7f3; }
+    </style>
+</head>
+<body class="theme-classic min-h-screen flex flex-col items-center justify-center p-4">
+
+    <!-- MÀN HÌNH ĐĂNG NHẬP / ĐĂNG KÝ -->
+    <div id="auth-screen" class="w-full max-w-md bg-white p-8 rounded-2xl shadow-xl border border-slate-100">
+        <div class="text-center mb-6">
+            <h1 class="text-3xl font-extrabold text-indigo-600 mb-2"><i class="fa-solid fa-chess-board"></i> Caro Pro 15x15</h1>
+            <p class="text-slate-500 text-sm">Đăng nhập để bắt đầu hành trình chinh phục cờ caro</p>
+        </div>
+        <div class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Tên tài khoản</label>
+                <input type="text" id="username-input" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Nhập tên của bạn...">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Mật khẩu</label>
+                <input type="password" id="password-input" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Nhập mật khẩu...">
+            </div>
+            <div class="flex gap-3 pt-2">
+                <button onclick="handleLogin()" class="flex-1 bg-indigo-600 text-white py-2.5 rounded-lg font-semibold hover:bg-indigo-700 transition">Đăng nhập</button>
+                <button onclick="handleRegister()" class="flex-1 bg-slate-200 text-slate-700 py-2.5 rounded-lg font-semibold hover:bg-slate-300 transition">Đăng ký</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MÀN HÌNH MENU CHÍNH -->
+    <div id="menu-screen" class="hidden w-full max-w-xl bg-white p-6 rounded-2xl shadow-xl border border-slate-100">
+        <div class="flex justify-between items-center mb-6 pb-4 border-b">
+            <div>
+                <h2 id="welcome-user" class="text-xl font-bold text-slate-800">Xin chào, Gamer</h2>
+                <div class="flex items-center gap-4 text-sm text-slate-600 mt-1">
+                    <span><i class="fa-solid fa-fire text-orange-500"></i> Streak: <strong id="user-streak">1</strong> ngày</span>
+                    <span><i class="fa-solid fa-trophy text-yellow-500"></i> Thắng: <strong id="user-wins">0</strong></span>
+                    <span><i class="fa-solid fa-coins text-amber-500"></i> Token: <strong id="user-tokens">50</strong></span>
+                </div>
+            </div>
+            <button onclick="logout()" class="text-red-500 hover:text-red-700 text-sm font-semibold"><i class="fa-solid fa-right-from-bracket"></i> Thoát</button>
+        </div>
+
+        <div class="grid grid-cols-1 gap-3">
+            <button onclick="openModeSelect()" class="p-4 bg-indigo-50 border border-indigo-200 rounded-xl flex items-center justify-between hover:bg-indigo-100 transition group">
+                <div class="flex items-center gap-3">
+                    <div class="w-12 h-12 bg-indigo-600 text-white rounded-lg flex items-center justify-center text-xl"><i class="fa-solid fa-robot"></i></div>
+                    <div class="text-left">
+                        <div class="font-bold text-indigo-900">1. Chơi với Máy (AI)</div>
+                        <div class="text-xs text-slate-500">Thử thách với 3 cấp độ Dễ, Trung bình, Khó</div>
+                    </div>
+                </div>
+                <i class="fa-solid fa-chevron-right text-indigo-400 group-hover:translate-x-1 transition"></i>
+            </button>
+
+            <button onclick="startPracticeMode()" class="p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between hover:bg-emerald-100 transition group">
+                <div class="flex items-center gap-3">
+                    <div class="w-12 h-12 bg-emerald-600 text-white rounded-lg flex items-center justify-center text-xl"><i class="fa-solid fa-play"></i></div>
+                    <div class="text-left">
+                        <div class="font-bold text-emerald-900">2. Chế độ Luyện tập (Máy vs Máy)</div>
+                        <div class="text-xs text-slate-500">Xem máy tự đấu để học hỏi chiến thuật</div>
+                    </div>
+                </div>
+                <i class="fa-solid fa-chevron-right text-emerald-400 group-hover:translate-x-1 transition"></i>
+            </button>
+
+            <button onclick="openOnlineModal()" class="p-4 bg-purple-50 border border-purple-200 rounded-xl flex items-center justify-between hover:bg-purple-100 transition group">
+                <div class="flex items-center gap-3">
+                    <div class="w-12 h-12 bg-purple-600 text-white rounded-lg flex items-center justify-center text-xl"><i class="fa-solid fa-globe"></i></div>
+                    <div class="text-left">
+                        <div class="font-bold text-purple-900">3. Đấu Online (Socket Room)</div>
+                        <div class="text-xs text-slate-500">Tạo phòng hoặc nhập ID để thi đấu với bạn bè</div>
+                    </div>
+                </div>
+                <i class="fa-solid fa-chevron-right text-purple-400 group-hover:translate-x-1 transition"></i>
+            </button>
+
+            <button onclick="openShop()" class="p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between hover:bg-amber-100 transition group">
+                <div class="flex items-center gap-3">
+                    <div class="w-12 h-12 bg-amber-500 text-white rounded-lg flex items-center justify-center text-xl"><i class="fa-solid fa-store"></i></div>
+                    <div class="text-left">
+                        <div class="font-bold text-amber-900">Cửa hàng Giao diện (Theme Shop)</div>
+                        <div class="text-xs text-slate-500">Dùng token để mua các giao diện bàn cờ mới</div>
+                    </div>
+                </div>
+                <i class="fa-solid fa-chevron-right text-amber-400 group-hover:translate-x-1 transition"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- CHỌN ĐỘ KHÓ AI -->
+    <div id="ai-difficulty-screen" class="hidden w-full max-w-md bg-white p-6 rounded-2xl shadow-xl border border-slate-100 text-center">
+        <h3 class="text-xl font-bold text-slate-800 mb-4">Chọn cấp độ Máy</h3>
+        <div class="space-y-3 mb-6">
+            <button onclick="startAiGame('easy')" class="w-full py-3 bg-green-500 text-white font-semibold rounded-lg hover:bg-green-600 transition">Dễ</button>
+            <button onclick="startAiGame('medium')" class="w-full py-3 bg-amber-500 text-white font-semibold rounded-lg hover:bg-amber-600 transition">Trung bình</button>
+            <button onclick="startAiGame('hard')" class="w-full py-3 bg-red-500 text-white font-semibold rounded-lg hover:bg-red-600 transition">Khó</button>
+        </div>
+        <button onclick="backToMenu()" class="text-slate-500 hover:text-slate-700 text-sm font-semibold"><i class="fa-solid fa-arrow-left"></i> Quay lại Menu</button>
+    </div>
+
+    <!-- MÀN HÌNH ONLINE LỰA CHỌN PHÒNG -->
+    <div id="online-screen" class="hidden w-full max-w-md bg-white p-6 rounded-2xl shadow-xl border border-slate-100">
+        <h3 class="text-xl font-bold text-slate-800 mb-4 text-center"><i class="fa-solid fa-globe text-purple-600"></i> Đấu Online qua Phòng</h3>
+        
+        <div class="space-y-6">
+            <div class="p-4 bg-purple-50 rounded-xl border border-purple-100">
+                <h4 class="font-semibold text-purple-900 mb-2">Khung 2: Tạo phòng mới</h4>
+                <button onclick="createRoom()" class="w-full bg-purple-600 text-white py-2.5 rounded-lg font-semibold hover:bg-purple-700 transition">Tạo phòng chơi</button>
+                <div id="room-info" class="mt-3 hidden">
+                    <p class="text-xs text-slate-600 mb-1">Mã ID phòng của bạn (gửi cho bạn bè):</p>
+                    <div class="flex gap-2">
+                        <input type="text" id="room-id-display" readonly class="w-full px-3 py-1.5 bg-white border rounded font-mono text-center text-sm font-bold">
+                        <button onclick="copyRoomId()" class="bg-indigo-600 text-white px-3 py-1.5 rounded text-sm hover:bg-indigo-700"><i class="fa-solid fa-copy"></i></button>
+                    </div>
+                    <p class="text-xs text-purple-600 mt-2 animate-pulse">Đang đợi người chơi thứ 2 vào phòng...</p>
+                </div>
+            </div>
+
+            <div class="p-4 bg-slate-50 rounded-xl border border-slate-200">
+                <h4 class="font-semibold text-slate-800 mb-2">Khung 1: Nhập ID phòng có sẵn</h4>
+                <input type="text" id="join-room-input" placeholder="Nhập mã ID phòng..." class="w-full px-4 py-2 border rounded-lg mb-2 uppercase tracking-widest text-center font-bold">
+                <button onclick="joinRoom()" class="w-full bg-indigo-600 text-white py-2.5 rounded-lg font-semibold hover:bg-indigo-700 transition">Vào phòng đấu</button>
+            </div>
+        </div>
+
+        <div class="mt-6 text-center">
+            <button onclick="backToMenu()" class="text-slate-500 hover:text-slate-700 text-sm font-semibold"><i class="fa-solid fa-arrow-left"></i> Quay lại Menu</button>
+        </div>
+    </div>
+
+    <!-- MÀN HÌNH CHƠI GAME -->
+    <div id="game-screen" class="hidden w-full max-w-3xl bg-white p-6 rounded-2xl shadow-xl border border-slate-100 flex flex-col items-center">
+        <div class="w-full flex justify-between items-center mb-4">
+            <button onclick="backToMenu()" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm font-semibold text-slate-700"><i class="fa-solid fa-arrow-left"></i> Menu</button>
+            <div id="game-status" class="text-lg font-bold text-indigo-600">Lượt đi: X</div>
+            <button onclick="resetGame()" class="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 rounded-lg text-sm font-semibold text-indigo-700"><i class="fa-solid fa-rotate-right"></i> Chơi lại</button>
+        </div>
+
+        <div id="board" class="board-grid w-full max-w-[550px] aspect-square rounded shadow-inner"></div>
+    </div>
+
+    <!-- CỬA HÀNG GIAO DIỆN (SHOP) -->
+    <div id="shop-screen" class="hidden w-full max-w-xl bg-white p-6 rounded-2xl shadow-xl border border-slate-100">
+        <div class="flex justify-between items-center mb-6 pb-4 border-b">
+            <h3 class="text-xl font-bold text-slate-800"><i class="fa-solid fa-store text-amber-500"></i> Cửa hàng Giao diện</h3>
+            <span class="text-sm font-semibold text-amber-600"><i class="fa-solid fa-coins"></i> Token: <span id="shop-tokens">0</span></span>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4 mb-6">
+            <div class="border p-4 rounded-xl flex flex-col justify-between">
+                <div>
+                    <h4 class="font-bold text-slate-800">Classic Wood</h4>
+                    <p class="text-xs text-slate-500 mt-1">Giao diện cổ điển truyền thống.</p>
+                </div>
+                <div class="mt-4 flex items-center justify-between">
+                    <span class="text-xs font-semibold text-green-600">Miễn phí</span>
+                    <button onclick="setTheme('classic')" class="px-3 py-1.5 bg-slate-800 text-white text-xs rounded font-semibold hover:bg-slate-900">Chọn</button>
+                </div>
+            </div>
+
+            <div class="border p-4 rounded-xl flex flex-col justify-between">
+                <div>
+                    <h4 class="font-bold text-slate-800">Neon Cyberpunk</h4>
+                    <p class="text-xs text-slate-500 mt-1">Giao diện điện tử phát sáng độc đáo.</p>
+                </div>
+                <div class="mt-4 flex items-center justify-between">
+                    <span class="text-xs font-semibold text-amber-600">50 Tokens</span>
+                    <button id="btn-theme-neon" onclick="buyTheme('neon', 50)" class="px-3 py-1.5 bg-amber-500 text-white text-xs rounded font-semibold hover:bg-amber-600">Mua</button>
+                </div>
+            </div>
+
+            <div class="border p-4 rounded-xl flex flex-col justify-between">
+                <div>
+                    <h4 class="font-bold text-slate-800">Minimalist Dark</h4>
+                    <p class="text-xs text-slate-500 mt-1">Giao diện tối giản hiện đại.</p>
+                </div>
+                <div class="mt-4 flex items-center justify-between">
+                    <span class="text-xs font-semibold text-amber-600">80 Tokens</span>
+                    <button id="btn-theme-dark" onclick="buyTheme('dark', 80)" class="px-3 py-1.5 bg-amber-500 text-white text-xs rounded font-semibold hover:bg-amber-600">Mua</button>
+                </div>
+            </div>
+
+            <div class="border p-4 rounded-xl flex flex-col justify-between">
+                <div>
+                    <h4 class="font-bold text-slate-800">Cute Pastel</h4>
+                    <p class="text-xs text-slate-500 mt-1">Giao diện ngọt ngào nhẹ nhàng.</p>
+                </div>
+                <div class="mt-4 flex items-center justify-between">
+                    <span class="text-xs font-semibold text-amber-600">100 Tokens</span>
+                    <button id="btn-theme-pastel" onclick="buyTheme('pastel', 100)" class="px-3 py-1.5 bg-amber-500 text-white text-xs rounded font-semibold hover:bg-amber-600">Mua</button>
+                </div>
+            </div>
+        </div>
+
+        <button onclick="backToMenu()" class="w-full bg-slate-100 hover:bg-slate-200 py-2.5 rounded-lg font-semibold text-slate-700"><i class="fa-solid fa-arrow-left"></i> Quay lại Menu</button>
+    </div>
+
+    <!-- MODAL THÔNG BÁO KẾT QUẢ -->
+    <div id="modal-result" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+        <div class="bg-white p-6 rounded-2xl shadow-2xl max-w-sm w-full text-center">
+            <h3 id="modal-title" class="text-2xl font-bold text-slate-800 mb-2">Chiến thắng!</h3>
+            <p id="modal-desc" class="text-slate-600 mb-6">Bạn đã xuất sắc giành chiến thắng (+20 Tokens)</p>
+            <button onclick="closeModalAndMenu()" class="w-full bg-indigo-600 text-white py-2.5 rounded-lg font-semibold hover:bg-indigo-700">Về Menu chính</button>
+        </div>
+    </div>
+
+    <script>
+        // --- FIREBASE CONFIG CHO SOCKET ONLINE ---
+        // Sử dụng Firebase công khai miễn phí để làm hệ thống socket đồng bộ phòng chơi
+        const firebaseConfig = {
+            apiKey: "AIzaSyDummyKeyForCaroApp99",
+            authDomain: "caro-game-sync.firebaseapp.com",
+            databaseURL: "https://caro-game-sync-default-rtdb.firebaseio.com",
+            projectId: "caro-game-sync"
+        };
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        const db = firebase.database();
+
+        // --- BIẾN TOÀN CỤC ---
+        const BOARD_SIZE = 15;
+        let board = [];
+        let currentPlayer = "X"; // X đi trước
+        let gameActive = true;
+        let gameMode = "ai"; // 'ai', 'practice', 'online'
+        let aiDifficulty = "easy";
+        let practiceInterval = null;
+
+        let currentRoomId = null;
+        let playerRole = null; // 'X' hoặc 'O'
+        let roomRef = null;
+
+        let currentUser = null;
+
+        // --- QUẢN LÝ TÀI KHOẢN & LƯU TRỮ ---
+        function getUsers() {
+            return JSON.parse(localStorage.getItem("caro_users")) || {};
+        }
+
+        function saveUsers(users) {
+            localStorage.setItem("caro_users", JSON.stringify(users));
+        }
+
+        function handleRegister() {
+            const u = document.getElementById("username-input").value.trim();
+            const p = document.getElementById("password-input").value.trim();
+            if (!u || !p) { alert("Vui lòng nhập đầy đủ tên và mật khẩu!"); return; }
+            let users = getUsers();
+            if (users[u]) { alert("Tên tài khoản đã tồn tại!"); return; }
+            users[u] = { password: p, wins: 0, tokens: 50, streak: 1, lastLogin: new Date().toDateString(), unlockedThemes: ['classic'], activeTheme: 'classic' };
+            saveUsers(users);
+            alert("Đăng ký thành công! Hãy đăng nhập.");
+        }
+
+        function handleLogin() {
+            const u = document.getElementById("username-input").value.trim();
+            const p = document.getElementById("password-input").value.trim();
+            let users = getUsers();
+            if (!users[u] || users[u].password !== p) { alert("Sai tên tài khoản hoặc mật khẩu!"); return; }
+            
+            currentUser = u;
+            let userData = users[u];
+
+            // Kiểm tra Streak ngày liên tục
+            let today = new Date().toDateString();
+            let last = new Date(userData.lastLogin);
+            let diffDays = Math.floor((new Date(today) - last) / (1000 * 60 * 60 * 24));
+            if (diffDays === 1) {
+                userData.streak += 1;
+                userData.lastLogin = today;
+            } else if (diffDays > 1) {
+                userData.streak = 1;
+                userData.lastLogin = today;
+            }
+            saveUsers(users);
+
+            updateUserUI();
+            setTheme(userData.activeTheme);
+            switchScreen("menu-screen");
+        }
+
+        function logout() {
+            currentUser = null;
+            if (practiceInterval) clearInterval(practiceInterval);
+            switchScreen("auth-screen");
+        }
+
+        function updateUserUI() {
+            if (!currentUser) return;
+            let users = getUsers();
+            let u = users[currentUser];
+            document.getElementById("welcome-user").innerText = `Xin chào, ${currentUser}`;
+            document.getElementById("user-streak").innerText = u.streak;
+            document.getElementById("user-wins").innerText = u.wins;
+            document.getElementById("user-tokens").innerText = u.tokens;
+            document.getElementById("shop-tokens").innerText = u.tokens;
+        }
+
+        // --- CHUYỂN MÀN HÌNH ---
+        function switchScreen(screenId) {
+            ['auth-screen', 'menu-screen', 'ai-difficulty-screen', 'online-screen', 'game-screen', 'shop-screen'].forEach(id => {
+                document.getElementById(id).classList.add('hidden');
+            });
+            document.getElementById(screenId).classList.remove('hidden');
+        }
+
+        function openModeSelect() { switchScreen('ai-difficulty-screen'); }
+        function openOnlineModal() { switchScreen('online-screen'); }
+        function backToMenu() {
+            if (practiceInterval) clearInterval(practiceInterval);
+            if (roomRef) { roomRef.off(); roomRef = null; }
+            updateUserUI();
+            switchScreen('menu-screen');
+        }
+
+        // --- KHỞI TẠO BÀN CỜ ---
+        function initBoard() {
+            board = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(""));
+            const boardEl = document.getElementById("board");
+            boardEl.innerHTML = "";
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                for (let c = 0; c < BOARD_SIZE; c++) {
+                    const cell = document.createElement("div");
+                    cell.className = "cell rounded-sm shadow-sm";
+                    cell.dataset.row = r;
+                    cell.dataset.col = c;
+                    cell.addEventListener("click", () => handleCellClick(r, c));
+                    boardEl.appendChild(cell);
+                }
+            }
+        }
+
+        function renderBoard() {
+            const cells = document.getElementById("board").children;
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                for (let c = 0; c < BOARD_SIZE; c++) {
+                    const idx = r * BOARD_SIZE + c;
+                    const val = board[r][c];
+                    cells[idx].innerText = val;
+                    cells[idx].style.color = val === "X" ? "#ef4444" : "#3b82f6";
+                }
+            }
+        }
+
+        // --- LOGIC GAME & LUẬT THẮNG ---
+        function handleCellClick(r, c) {
+            if (!gameActive || board[r][c] !== "") return;
+
+            if (gameMode === 'ai') {
+                if (currentPlayer !== "X") return;
+                makeMove(r, c, "X");
+                if (checkWin(r, c, "X")) {
+                    endGame("X");
+                    return;
+                }
+                if (checkDraw()) {
+                    endGame("Draw");
+                    return;
+                }
+                currentPlayer = "O";
+                document.getElementById("game-status").innerText = "Máy đang suy nghĩ...";
+                setTimeout(aiMove, 300);
+            } 
+            else if (gameMode === 'online') {
+                if (currentPlayer !== playerRole) return;
+                makeMove(r, c, playerRole);
+                
+                // Gửi dữ liệu nước đi lên Firebase (Socket Sync)
+                roomRef.update({
+                    board: board,
+                    turn: playerRole === "X" ? "O" : "X",
+                    lastMove: {r, c}
+                });
+
+                if (checkWin(r, c, playerRole)) {
+                    roomRef.update({ winner: playerRole });
+                    endGame(playerRole);
+                    return;
+                }
+                if (checkDraw()) {
+                    roomRef.update({ winner: "Draw" });
+                    endGame("Draw");
+                    return;
+                }
+            }
+        }
+
+        function makeMove(r, c, player) {
+            board[r][c] = player;
+            renderBoard();
+        }
+
+        function checkWin(r, c, player) {
+            const directions = [
+                {dr: 0, dc: 1},  // Ngang
+                {dr: 1, dc: 0},  // Dọc
+                {dr: 1, dc: 1},  // Chéo chính
+                {dr: 1, dc: -1}  // Chéo phụ
+            ];
+
+            for (let {dr, dc} of directions) {
+                let count = 1;
+                let i = 1;
+                while (r + dr*i >= 0 && r + dr*i < BOARD_SIZE && c + dc*i >= 0 && c + dc*i < BOARD_SIZE && board[r + dr*i][c + dc*i] === player) {
+                    count++; i++;
+                }
+                i = 1;
+                while (r - dr*i >= 0 && r - dr*i < BOARD_SIZE && c - dc*i >= 0 && c - dc*i < BOARD_SIZE && board[r - dr*i][c - dc*i] === player) {
+                    count++; i++;
+                }
+                if (count >= 5) return true;
+            }
+            return false;
+        }
+
+        function checkDraw() {
+            return board.every(row => row.every(cell => cell !== ""));
+        }
+
+        function endGame(winner) {
+            gameActive = false;
+            let title = "", desc = "";
+            let users = getUsers();
+            let u = users[currentUser];
+
+            if (winner === "Draw") {
+                title = "Hòa mất rồi!";
+                desc = "Trận đấu căng thẳng kết thúc bất phân thắng bại.";
+            } else if (winner === "X" && gameMode === 'online' && playerRole === 'O') {
+                title = "Bạn đã thua!";
+                desc = "Đối thủ đã giành chiến thắng trong trận này.";
+            } else {
+                title = "Chiến thắng thuộc về bạn!";
+                desc = "Bạn nhận được +20 Tokens và +1 trận thắng!";
+                if (u) {
+                    u.wins += 1;
+                    u.tokens += 20;
+                    saveUsers(users);
+                }
+            }
+            document.getElementById("modal-title").innerText = title;
+            document.getElementById("modal-desc").innerText = desc;
+            document.getElementById("modal-result").classList.remove("hidden");
+        }
+
+        function closeModalAndMenu() {
+            document.getElementById("modal-result").classList.add("hidden");
+            backToMenu();
+        }
+
+        function resetGame() {
+            initBoard();
+            gameActive = true;
+            currentPlayer = "X";
+            document.getElementById("game-status").innerText = "Lượt đi: X";
+            if (gameMode === 'practice') startPracticeLoop();
+        }
+
+        // --- AI LOGIC (3 CẤP ĐỘ) ---
+        function startAiGame(level) {
+            aiDifficulty = level;
+            gameMode = 'ai';
+            switchScreen('game-screen');
+            initBoard();
+            document.getElementById("game-status").innerText = "Lượt đi: X (Bạn)";
+        }
+
+        function aiMove() {
+            if (!gameActive) return;
+            let bestMove = null;
+
+            if (aiDifficulty === 'easy') {
+                let emptyCells = [];
+                for(let r=0; r<BOARD_SIZE; r++) {
+                    for(let c=0; c<BOARD_SIZE; c++) {
+                        if(board[r][c] === "") emptyCells.push({r, c});
+                    }
+                }
+                if(emptyCells.length > 0) bestMove = emptyCells[Math.floor(Math.random() * emptyCells.length)];
+            } else {
+                // Medium & Hard heuristic scoring
+                bestMove = findBestAIMove(aiDifficulty === 'hard' ? 2 : 1);
+            }
+
+            if (bestMove) {
+                makeMove(bestMove.r, bestMove.c, "O");
+                if (checkWin(bestMove.r, bestMove.c, "O")) {
+                    endGame("O");
+                    return;
+                }
+                if (checkDraw()) {
+                    endGame("Draw");
+                    return;
+                }
+            }
+            currentPlayer = "X";
+            document.getElementById("game-status").innerText = "Lượt đi: X (Bạn)";
+        }
+
+        function findBestAIMove(depth) {
+            let maxScore = -Infinity;
+            let bestMove = null;
+            for(let r=0; r<BOARD_SIZE; r++) {
+                for(let c=0; c<BOARD_SIZE; c++) {
+                    if(board[r][c] === "") {
+                        board[r][c] = "O";
+                        let score = evaluateBoard("O");
+                        board[r][c] = "";
+                        if(score > maxScore) {
+                            maxScore = score;
+                            bestMove = {r, c};
+                        }
+                    }
+                }
+            }
+            return bestMove;
+        }
+
+        function evaluateBoard(player) {
+            let score = 0;
+            for(let r=0; r<BOARD_SIZE; r++) {
+                for(let c=0; c<BOARD_SIZE; c++) {
+                    if(board[r][c] === player) score += 10;
+                }
+            }
+            return score + Math.random() * 5; // randomness for natural play
+        }
+
+        // --- CHẾ ĐỘ LUYỆN TẬP (MÁY VS MÁY) ---
+        function startPracticeMode() {
+            gameMode = 'practice';
+            switchScreen('game-screen');
+            initBoard();
+            startPracticeLoop();
+        }
+
+        function startPracticeLoop() {
+            if (practiceInterval) clearInterval(practiceInterval);
+            practiceInterval = setInterval(() => {
+                if (!gameActive) { clearInterval(practiceInterval); return; }
+                let emptyCells = [];
+                for(let r=0; r<BOARD_SIZE; r++) {
+                    for(let c=0; c<BOARD_SIZE; c++) {
+                        if(board[r][c] === "") emptyCells.push({r, c});
+                    }
+                }
+                if(emptyCells.length === 0) { endGame("Draw"); clearInterval(practiceInterval); return; }
+                let move = emptyCells[Math.floor(Math.random() * emptyCells.length)];
+                makeMove(move.r, move.c, currentPlayer);
+                document.getElementById("game-status").innerText = `Luyện tập - Máy ${currentPlayer} đang đánh`;
+                if(checkWin(move.r, move.c, currentPlayer)) {
+                    endGame(currentPlayer);
+                    clearInterval(practiceInterval);
+                    return;
+                }
+                currentPlayer = currentPlayer === "X" ? "O" : "X";
+            }, 600);
+        }
+
+        // --- ĐẤU ONLINE QUA PHÒNG (SOCKET FIREBASE) ---
+        function createRoom() {
+            const roomId = Math.random().toString(36.substring(2, 8)).toUpperCase();
+            currentRoomId = roomId;
+            playerRole = "X";
+            
+            document.getElementById("room-id-display").value = roomId;
+            document.getElementById("room-info").classList.remove("hidden");
+
+            roomRef = db.ref("rooms/" + roomId);
+            roomRef.set({
+                board: Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill("")),
+                turn: "X",
+                winner: null
+            });
+
+            listenRoom();
+        }
+
+        function joinRoom() {
+            const roomId = document.getElementById("join-room-input").value.trim().toUpperCase();
+            if (!roomId) { alert("Vui lòng nhập mã ID phòng!"); return; }
+            currentRoomId = roomId;
+            playerRole = "O";
+
+            roomRef = db.ref("rooms/" + roomId);
+            roomRef.once("value", snapshot => {
+                if (!snapshot.exists()) {
+                    alert("Không tìm thấy phòng này!");
+                    return;
+                }
+                gameMode = 'online';
+                switchScreen('game-screen');
+                initBoard();
+                listenRoom();
+            });
+        }
+
+        function copyRoomId() {
+            const copyText = document.getElementById("room-id-display");
+            copyText.select();
+            navigator.clipboard.writeText(copyText.value);
+            alert("Đã sao chép mã phòng: " + copyText.value);
+        }
+
+        function listenRoom() {
+            gameMode = 'online';
+            roomRef.on("value", snapshot => {
+                const data = snapshot.val();
+                if (!data) return;
+                board = data.board;
+                renderBoard();
+                currentPlayer = data.turn;
+                document.getElementById("game-status").innerText = `Phòng: ${currentRoomId} | Bạn là: ${playerRole} | Lượt: ${currentPlayer}`;
+
+                if (data.winner) {
+                    endGame(data.winner);
+                } else {
+                    if (document.getElementById("game-screen").classList.contains("hidden")) {
+                        switchScreen("game-screen");
+                        initBoard();
+                    }
+                }
+            });
+        }
+
+        // --- CỬA HÀNG GIAO DIỆN (SHOP) ---
+        function openShop() {
+            let users = getUsers();
+            let u = users[currentUser];
+            document.getElementById("shop-tokens").innerText = u.tokens;
+            
+            // Cập nhật trạng thái nút theme đã mua
+            u.unlockedThemes.forEach(th => {
+                if (th !== 'classic') {
+                    const btn = document.getElementById(`btn-theme-${th}`);
+                    if(btn) { btn.innerText = "Đã mua"; btn.className = "px-3 py-1.5 bg-green-600 text-white text-xs rounded font-semibold"; }
+                }
+            });
+            switchScreen('shop-screen');
+        }
+
+        function buyTheme(themeName, cost) {
+            let users = getUsers();
+            let u = users[currentUser];
+            if (u.unlockedThemes.includes(themeName)) {
+                setTheme(themeName);
+                return;
+            }
+            if (u.tokens < cost) {
+                alert("Bạn không đủ Token để mua giao diện này!");
+                return;
+            }
+            u.tokens -= cost;
+            u.unlockedThemes.push(themeName);
+            saveUsers(users);
+            updateUserUI();
+            
+            const btn = document.getElementById(`btn-theme-${themeName}`);
+            btn.innerText = "Đã mua";
+            btn.className = "px-3 py-1.5 bg-green-600 text-white text-xs rounded font-semibold";
+            setTheme(themeName);
+            alert("Mua thành công giao diện!");
+        }
+
+        function setTheme(themeName) {
+            document.body.className = `theme-${themeName} min-h-screen flex flex-col items-center justify-center p-4`;
+            if (currentUser) {
+                let users = getUsers();
+                if(users[currentUser]) {
+                    users[currentUser].activeTheme = themeName;
+                    saveUsers(users);
+                }
+            }
+        }
+    </script>
+</body>
+</html>
